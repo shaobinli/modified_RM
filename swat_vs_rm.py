@@ -17,17 +17,16 @@ def swat_vs_RM(name, sw, ag_scenario, plot=True, p_adjust=False, mode='poly'):
     '''note: only works for one specificed sw: traditional RM and modified RM'''
     # Step 1: get loading from original SWAT results...
     if name == 'nitrate':
-        # df = pd.read_excel(r'C:\ITEEM\Submodel_SWAT\Response_matrix_BMPs.xlsx',sheet_name=0)
-        df = pd.read_csv(r'C:\ITEEM\Submodel_SWAT\results_validation\100Randomizations\loading_nitrate_March2021.csv')
+        df = pd.read_csv('./results_validation/100Randomizations/loading_nitrate_March2021.csv')
         # df = pd.read_excel(xls_load, 'Nitrate')
     elif name == 'phosphorus':
-        df = pd.read_csv(r'C:\ITEEM\Submodel_SWAT\results_validation\100Randomizations\loading_phosphorus_March2021.csv')
+        df = pd.read_csv('./results_validation/100Randomizations/loading_phosphorus_March2021.csv')
         # df = pd.read_excel(xls_load, 'Phosphorus')
     elif name == 'sediment':
-        df = pd.read_csv(r'C:\ITEEM\Submodel_SWAT\results_validation\100Randomizations\loading_sediment_March2021.csv')
+        df = pd.read_csv('./results_validation/100Randomizations/loading_sediment_March2021.csv')
         # df = pd.read_excel(xls_load, 'Sediments')
     elif name == 'streamflow':
-        df = pd.read_csv(r'C:\ITEEM\Submodel_SWAT\results_validation\100Randomizations\loading_streamflow_March2021.csv')
+        df = pd.read_csv('./results_validation/100Randomizations/loading_streamflow_March2021.csv')
         # df = pd.read_excel(xls_load, 'Water')
         df = df*30*60*60*24
     subwatershed = df.iloc[:,0].unique()
@@ -40,7 +39,6 @@ def swat_vs_RM(name, sw, ag_scenario, plot=True, p_adjust=False, mode='poly'):
     for i in range(year.size):
         for j in range(month.size):
             df2 = df.iloc[month.size*subwatershed.size*(i):month.size*subwatershed.size*(i+1),:]
-            # df = df.reset_index(inplace=False, drop= True)
             df_to_np[i,j,:,:] = df2.iloc[45*(j):45*(j+1),:]
             
     n = int(ag_scenario[-2:])-1
@@ -57,18 +55,18 @@ def swat_vs_RM(name, sw, ag_scenario, plot=True, p_adjust=False, mode='poly'):
     nse0 = nse(obs=df_swat, sim=df_iteem_sw)
     
     '''original RM results'''
-    landuse_matrix = landuse_mat()  # (45,56)
+    landuse_matrix = landuse_mat()
     scenario, BMP_list= get_area_prcnt(ag_scenario)
     for i in BMP_list:
         landuse_matrix[:,i] = scenario.loc[:,i]
-    df_iteem_originalRM = loading_outlet_originalRM(name, landuse_matrix) # use original RM to predict 
+    df_iteem_originalRM = loading_outlet_originalRM(name, landuse_matrix)
     df_iteem_sw_originalRM = df_iteem_originalRM[:,:,sw]
     
     pbias_originalRM = pbias(obs=df_swat, sim=df_iteem_sw_originalRM)
     nse_originalRM = nse(obs=df_swat, sim=df_iteem_sw_originalRM)
     
     if name == 'nitrate' or name == 'phosphorus':
-        df_point = pd.read_csv(r'C:\ITEEM\Submodel_SWAT\results_validation\SDD_interpolated_2000_2018_Inputs.csv', 
+        df_point = pd.read_csv('./data/SDD_interpolated_2000_2018_Inputs.csv', 
                           parse_dates=['Date'],index_col='Date')
         if name == 'nitrate':
             df_point = pd.DataFrame(df_point.iloc[:,0])

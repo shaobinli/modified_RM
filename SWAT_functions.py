@@ -17,7 +17,7 @@ from calendar import monthrange
 from data import *
 
 
-#-----Function for connectivity matrix-----
+'''-----Function for connectivity matrix-----'''
 def watershed_linkage(**kwargs):
     linkage = df_linkage
     nodes = linkage.shape[0]
@@ -37,15 +37,12 @@ def watershed_linkage(**kwargs):
 # linkage_W = watershed_linkage(outlet=34)
 # linkage_W = watershed_linkage()[0]
 
-#-----Function for response matrix-----
+'''-----Function for response matrix-----'''
 def response_mat(name):
     '''
-    sa = sensitivity analysis
-    return as a tuple
     unit: kg/ha for nitrate, phosphorus, soy, corn, corn silage; ton/ha for sediment; mm for water yield
     '''
     if name == 'nitrate':
-        # df = pd.read_excel(r'C:\ITEEM\Submodel_SWAT\Response_matrix_BMPs.xlsx',sheet_name=0)
         df = df_nitrate
     elif name == 'phosphorus':
         df = df_TP
@@ -59,20 +56,15 @@ def response_mat(name):
     year = df.iloc[:,1].unique()
     month = df.iloc[:,2].unique()
     area_sw = df.iloc[:,3].unique()
-    # response_matrix = df.set_index(['Year','Month'])
     df = df.drop(df.columns[[0,1,2,3]], axis=1)
     df_to_np = np.zeros((year.size, month.size, subwatershed.size, df.shape[1]))
     for i in range(year.size):
         for j in range(month.size):
             df2 = df.iloc[month.size*subwatershed.size*(i):month.size*subwatershed.size*(i+1),:]
-            # df = df.reset_index(inplace=False, drop= True)
             df_to_np[i,j,:,:] = df2.iloc[45*(j):45*(j+1),:]
     return df_to_np, subwatershed, year, month, df.shape[1], area_sw
 
-# response_mat_all = response_mat('phosphorus')[0][:,:,7,0]
-#response_nitrate = response_mat_all[0]
-
-#-----Functions for land use fraction of each BMP at each subwatershed-----
+'''-----Functions for land use fraction of each BMP at each subwatershed-----'''
 def basic_landuse():
     '''basic case of land use'''
     landuse = df_landuse
@@ -102,7 +94,7 @@ def landuse_mat(scenario_name):
 # landuse_matrix = np.zeros((45,56))
 # landuse_matrix[:, 5] = 1.0
 
-#-----Function for calculating yield of N, P, sediment, streamflow for each subwatershed-----
+'''-----Function for calculating yield of N, P, sediment, streamflow for each subwatershed-----'''
 def get_yield(name, landuse_matrix):
     '''
     return a tuple containing two numpy array: 
@@ -116,9 +108,7 @@ def get_yield(name, landuse_matrix):
     year = response[2]
     month = response[3]
     BMP_num = response[4]
-    # landuse_matrix = landuse_matrix_combinedS1
     '''landuse_matrix is expressed as %, changed as land decision changes'''
-    # landuse_matrix = landuse_mat(scenario_name)
     yield_per_BMP = np.zeros((year.size, month.size, subwatershed.size, BMP_num))
     for i in range(year.size):
         for j in range(month.size):
@@ -136,7 +126,7 @@ def get_yield(name, landuse_matrix):
 # yield_sw_yr1 = yield_sw[0,:,:,:][0]
 # yield_sw_yr2 = yield_sw[1,:,:,:][0]
 
-#-----Function for calculating loadings of N, P, sediment, streamflow for each subwatershed-----
+'''-----Function for calculating loadings of N, P, sediment, streamflow for each subwatershed-----'''
 def loading_landscape(name, landuse_matrix):
     '''
     return
@@ -162,14 +152,12 @@ def loading_landscape(name, landuse_matrix):
     loading = np.zeros((year.size, month.size, subwatershed.size))
     '''get yield data'''
     yield_data = get_yield(name, landuse_matrix)[1]
-    # yield_data = get_yield('nitrate', 'Sheet1')
-    # test = np.multiply(np_yield_s1[0,0,:],total_land.T)
+
     '''get background loading'''
     for i in range(year.size):
         for j in range(month.size):
             loading[i,j,:] = np.multiply(yield_data[i,j,:], total_land.T)
-    # '''add nutrient contribution from urban'''
-    # loading[:,:,30] = response_matrix[:,:,30,0]*total_land[30,0]
+
     '''get landscape outlet''' 
     linkage_W_inv = watershed_linkage()[1]
     loading_BMP_sum = loading
@@ -180,14 +168,14 @@ def loading_landscape(name, landuse_matrix):
     
     outlet = np.swapaxes(outlet,1,2)
     if name == 'streamflow':
-        outlet = outlet*10   # convert mm*ha to m3 by 10
+        outlet = outlet*10
     return loading, outlet
 
 # landuse_matrix = np.zeros((45,62)); landuse_matrix[:,1] = 1
 # loading, outlet = loading_landscape('sediment', landuse_matrix)
 # loading_sw_yr2 = loading_sw_test[1,:,:,:]
 
-#-----Function for calculating outlet loading of N, P, sediment, streamflow for each subwatershed-----
+'''-----Function for calculating outlet loading of N, P, sediment, streamflow for each subwatershed-----'''
 def loading_outlet_USRW(name, landuse_matrix, tech_wwt='AS', nutrient_index=1.0, flow_index=1.0):
     '''
     return a numpy array: (year, month,subwatershed)
@@ -196,17 +184,14 @@ def loading_outlet_USRW(name, landuse_matrix, tech_wwt='AS', nutrient_index=1.0,
     '''
     df = df_linkage2
     df[np.isnan(df)] = 0
-    # name = 'nitrate'
-    # scenario_name = 'BMP00'
     loading_BMP_sum = loading_landscape(name, landuse_matrix)[0]
     outlet = np.zeros((loading_BMP_sum.shape[0], loading_BMP_sum.shape[1], loading_BMP_sum.shape[2]))
     for i in range(33):
         a = df.loc[i].unique().astype('int')
         a = a[a!=0]
         for j in a:
-            # print (j)
             outlet[:,:,i] += loading_BMP_sum[:,:,j-1]     
-    # Total loading in sw32 = res_out + background loading
+
     '''******************Start of reservior trapping effect*******************'''
     res_in = outlet[:,:,32]
     if name == 'nitrate':
@@ -228,7 +213,6 @@ def loading_outlet_USRW(name, landuse_matrix, tech_wwt='AS', nutrient_index=1.0,
     outlet[:,:,30] = loading_BMP_sum[:,:,30] + outlet[:,:,31]
     
     '''***********************Start of point source*************************'''
-    # name = 'nitrate'
     if tech_wwt == 'AS':
         if name == 'nitrate' or name == 'phosphorus':
             df_point = df_point_SDD
