@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Author: Shaobin Li (shaobin@illinois.edu)
-Project: INFEWS - ITEEM (NSF award number: 1739788)
+Project: NSF INFEWS/T1 (award number: 1739788)
+
+Purpose: perforamnce metrics used for RM results vs SWAT results
 """
 
 

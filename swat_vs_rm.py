@@ -1,39 +1,39 @@
 # -*- coding: utf-8 -*-
+"""
+Author: Shaobin Li (shaobin@illinois.edu)
+Project: NSF INFEWS/T1 (award number: 1739788)
 
+Purpose: comparing traditional RM and modified RM
+"""
 
-# Import required packages for data processing
 import pandas as pd
 import numpy as np
 import time
 import matplotlib.pyplot as plt
-from metrics import pbias, nse
-from results_validation_originalRM import loading_outlet_originalRM
 from matplotlib.ticker import FormatStrFormatter
+
+from modified_RM_main import loading_outlet_traditionalRM, loading_outlet_modifiedRM
+from metrics import pbias, nse
 from data import *
 
 
 '''Start Section: comparison of original SWAT vs RM'''
 def swat_vs_RM(name, sw, ag_scenario, plot=True, p_adjust=False, mode='poly'):
     '''note: only works for one specificed sw: traditional RM and modified RM'''
-    # Step 1: get loading from original SWAT results...
+    # get loading from original SWAT results...
     if name == 'nitrate':
-        df = pd.read_csv('./results_validation/100Randomizations/loading_nitrate_March2021.csv')
-        # df = pd.read_excel(xls_load, 'Nitrate')
+        df = pd.read_csv('./100Randomizations/loading_nitrate.csv')
     elif name == 'phosphorus':
-        df = pd.read_csv('./results_validation/100Randomizations/loading_phosphorus_March2021.csv')
-        # df = pd.read_excel(xls_load, 'Phosphorus')
+        df = pd.read_csv('./100Randomizations/loading_phosphorus.csv')
     elif name == 'sediment':
-        df = pd.read_csv('./results_validation/100Randomizations/loading_sediment_March2021.csv')
-        # df = pd.read_excel(xls_load, 'Sediments')
+        df = pd.read_csv('./100Randomizations/loading_sediment.csv')
     elif name == 'streamflow':
-        df = pd.read_csv('./results_validation/100Randomizations/loading_streamflow_March2021.csv')
-        # df = pd.read_excel(xls_load, 'Water')
-        df = df*30*60*60*24
+        df = pd.read_csv('./100Randomizations/loading_streamflow.csv')
+        df = df*30*60*60*24 # m3/month
     subwatershed = df.iloc[:,0].unique()
     year = df.iloc[:,1].unique()
     month = df.iloc[:,2].unique()
-    # area_sw = df.iloc[:,3].unique()
-    # response_matrix = df.set_index(['Year','Month'])
+
     df = df.drop(df.columns[[0,1,2,3]], axis=1)
     df_to_np = np.zeros((year.size, month.size, subwatershed.size, df.shape[1]))
     for i in range(year.size):
@@ -44,7 +44,7 @@ def swat_vs_RM(name, sw, ag_scenario, plot=True, p_adjust=False, mode='poly'):
     n = int(ag_scenario[-2:])-1
     df_swat = df_to_np[:,:,sw,n]
 
-    df_iteem = loading_outlet_USRW(name, ag_scenario)
+    df_iteem = loading_outlet_modifiedRM(name, ag_scenario)
     df_iteem_sw = df_iteem[:,:,sw]
     
     if name =='sediment':
@@ -59,14 +59,14 @@ def swat_vs_RM(name, sw, ag_scenario, plot=True, p_adjust=False, mode='poly'):
     scenario, BMP_list= get_area_prcnt(ag_scenario)
     for i in BMP_list:
         landuse_matrix[:,i] = scenario.loc[:,i]
-    df_iteem_originalRM = loading_outlet_originalRM(name, landuse_matrix)
+    df_iteem_originalRM = loading_outlet_traditionalRM(name, landuse_matrix)
     df_iteem_sw_originalRM = df_iteem_originalRM[:,:,sw]
     
     pbias_originalRM = pbias(obs=df_swat, sim=df_iteem_sw_originalRM)
     nse_originalRM = nse(obs=df_swat, sim=df_iteem_sw_originalRM)
     
     if name == 'nitrate' or name == 'phosphorus':
-        df_point = pd.read_csv('./data/SDD_interpolated_2000_2018_Inputs.csv', 
+        df_point = pd.read_csv('./support_data/SDD_interpolated_2000_2018_Inputs.csv', 
                           parse_dates=['Date'],index_col='Date')
         if name == 'nitrate':
             df_point = pd.DataFrame(df_point.iloc[:,0])
@@ -130,50 +130,12 @@ def swat_vs_RM(name, sw, ag_scenario, plot=True, p_adjust=False, mode='poly'):
         if name == 'phosphorus':
             plt.legend(fontsize=10, loc='center left', bbox_to_anchor=(0.40, 0.88),frameon=False,ncol=2,handleheight=2.4, labelspacing=0.05)
         else:
-            # pass
             plt.legend(fontsize=10, loc='center left', bbox_to_anchor=(0.01, 0.88),frameon=False)
         plt.tight_layout()
-        # plt.savefig(r'C:\ITEEM\ITEEM_figures\RM_Jan_2021\randomized\\'+name+'_' + ag_scenario +'_sw'+str(sw+1)+'P_adjust_'+str(p_adjust)+'_invert_yield_June2021.tif', dpi=300)
         plt.show()
-    # df_swat.flatten(), df_iteem_sw.flatten(), df_iteem_sw_originalRM_point.flatten()
+
     return pbias0, nse0, pbias_originalRM, nse_originalRM, df_swat.flatten(), df_iteem_sw.flatten()
 
 # test = swat_vs_iteem('nitrate', sw=7, ag_scenario='Sheet01')
 # test = swat_vs_iteem('phosphorus', sw=33, ag_scenario='Sheet01', p_adjust=True)
 # test = swat_vs_iteem('sediment', sw=32, ag_scenario='Sheet01', p_adjust=True, mode='poly')
-# df_swat = test[-2].sum()/test[-3].sum()
-# df_iteem_sw = test[-2].sum()
-# df_iteem_sw_originalRM = test[-1].sum()
-
-# trial_list1 = ['Sheet0' + str(i) for i in range(1,10)]
-# trial_list2 = ['Sheet' + str(i) for i in range(10,101)]
-# trial_list = trial_list1 + trial_list2
-# df_nitrate = pd.DataFrame(columns=['pbias_%', 'nse'])
-# np_nitrate = np.zeros((45,100,4))
-# np_TP = np.zeros((45,100,4))
-# np_streamflow = np.zeros((45,100,4))
-# np_sediment_linear = np.zeros((45,100,4))
-# np_sediment_poly = np.zeros((45,100,4))
-
-# start = time.time()
-# for sw in range(45):
-#     print('simulating subwatershed: ', sw)
-#     for i in range(100):
-#         # np_nitrate[sw,i,:] = swat_vs_iteem('nitrate', sw, ag_scenario=trial_list[i], plot=False)
-#         np_sediment_linear[sw,i,:] = swat_vs_iteem('sediment', sw, ag_scenario=trial_list[i], plot=False, mode='linear')       
-#         np_sediment_poly[sw,i,:] = swat_vs_iteem('sediment', sw, ag_scenario=trial_list[i], plot=False, mode='poly')     
-#         # np_streamflow[sw,i,:] = swat_vs_iteem('streamflow', sw, ag_scenario=trial_list[i], plot=False)
-#         # np_sediment[sw,i,:] = swat_vs_iteem('sediment', sw, ag_scenario=trial_list[i], plot=False)
-#         print('simulating scenario: ', i)
-# end = time.time()
-# print('Run time (hrs): ', str((end-start)/3600)[:3])
-
-# import scipy.io
-# scipy.io.savemat(r'C:\ITEEM\Submodel_SWAT\results_validation\np_nitrate_Apr2021.mat', mdict={'out': np_nitrate}, oned_as='row')
-# scipy.io.savemat(r'C:\ITEEM\Submodel_SWAT\results_validation\np_TP_May2021.mat', mdict={'out': np_TP}, oned_as='row')
-# scipy.io.savemat(r'C:\ITEEM\Submodel_SWAT\results_validation\np_streamflow_Apr2021.mat', mdict={'out': np_streamflow}, oned_as='row')
-# scipy.io.savemat(r'C:\ITEEM\Submodel_SWAT\results_validation\np_sediment_linear_May2021.mat', mdict={'out': np_sediment_linear}, oned_as='row')
-# scipy.io.savemat(r'C:\ITEEM\Submodel_SWAT\results_validation\np_sediment_poly_May2021.mat', mdict={'out': np_sediment_poly}, oned_as='row')
-# load data again
-# RM_sens = scipy.io.loadmat(r'C:\Users\Shaobin\Box\SWATBaseline\ScenarioResults\ForITEEM\Sensitivity Analysis\YieldsAndLoads_Feb6_2021.mat')['out']
-# plt.hist(np_TP[0,:,1])
