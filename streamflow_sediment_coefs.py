@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Dec 31 14:23:01 2020
-
 Derive sediment-streawmflow relationship
 
 @author: Shaobin

@@ -10,10 +10,7 @@ Purpose: Constructing the modified response matrix method to approximate SWAT fo
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
-
-from traditional_RM_main import loading_outlet_originalRM
-from metrics import pbias, nse
-from data import *
+from data import *  # load data
 
 
 '''Step 1: enerate a set of response matrices (Y_(m,t)), gathered from SWAT simulation outputs'''
@@ -180,8 +177,24 @@ def loading_landscape(name, scenario_name):
 
 # landscape_loading_nitrate = loading_landscape('nitrate', 'Sheet01')
 
-'''Step 6: Estimate in-stream loads at the outlet of each subwatershed with modifications:'''
-def loading_outlet_USRW(name, scenario_name):
+'''Step 6a: traditional RM method to estimate in-stream loads at the outlet of each subwatershed'''
+def loading_outlet_traditionalRM(name, landuse_matrix):
+    '''
+    return a numpy array: (year, month,subwatershed)
+    reservoir watershed: 33; downstream of res: 32
+    outlet: 34
+    '''
+    linkage = pd.read_excel(r'./support_data/Watershed_linkage.xlsx', index_col=0)
+    loading_BMP_sum = loading_landscape(name, landuse_matrix)
+   
+    outlet = np.zeros((loading_BMP_sum.shape[0], loading_BMP_sum.shape[2], loading_BMP_sum.shape[1]))
+    for i in range(loading_BMP_sum.shape[0]):
+        outlet[i,:,:] = np.dot(linkage, loading_BMP_sum[i,:,:].T)
+    outlet = np.swapaxes(outlet, 1, 2)
+    return outlet
+
+'''Step 6b: modified RM method to estimate in-stream loads at the outlet of each subwatershed with modifications:'''
+def loading_outlet_modifiedRM(name, scenario_name):
     '''
     return a numpy (year, month, watershed)
     reservoir watershed: 33; downstream of res: 32; outlet: 34
@@ -196,7 +209,7 @@ def loading_outlet_USRW(name, scenario_name):
     return 
 
 
-def loading_outlet_USRW(name, scenario_name):
+def loading_outlet_modifiedRM(name, scenario_name):
     '''
     function used to estimate loading of nitrate, phosphus and streamflow
     return a numpy (year, month, watershed)
@@ -299,58 +312,8 @@ def streamflow_inv(sw, scenario_name):
     scenario, BMP_list= get_area_prcnt(scenario_name)
     for i in BMP_list:
         landuse_matrix[:,i] = scenario.loc[:,i]
-    streamflow = loading_outlet_originalRM('streamflow', landuse_matrix)
+    streamflow = loading_outlet_traditionalRM('streamflow', landuse_matrix)
     return streamflow[:,:,sw]
-
-def phosphorus_instream_coefs(sw, scenario_name):
-    '''function used to estimate phosphorus instream coefficients'''
-    '''method 1: 1/Q '''
-    # streamflow = loading_outlet_USRW('streamflow', scenario_name)
-    # streamflow_sw = streamflow[:,:,sw]
-    # x2 = 1/streamflow_sw
-    
-    '''method 2: 1/yield '''
-    x2 = streamflow_inv(sw, scenario_name)
-    
-    
-    phosphorus_loss = loading_outlet_USRW('phosphorus', scenario_name) # use original RM to predict 
-    # phosphorus_loss_original = loading_outlet_originalRM('phosphorus', landuse_matrix) # use original RM to predict 
-    # sw=33
-    x1 = phosphorus_loss[:,:,sw] 
-    df = pd.read_csv(r'.\100Randomizations\loading_phosphorus_March2021.csv')
-    subwatershed = df.iloc[:,0].unique()
-    year = df.iloc[:,1].unique()
-    month = df.iloc[:,2].unique()
-    # area_sw = df.iloc[:,3].unique()
-    # response_matrix = df.set_index(['Year','Month'])
-    df = df.drop(df.columns[[0,1,2,3]], axis=1)
-    df_to_np = np.zeros((year.size, month.size, subwatershed.size, df.shape[1]))
-    for i in range(year.size):
-        for j in range(month.size):
-            df2 = df.iloc[month.size*subwatershed.size*(i):month.size*subwatershed.size*(i+1),:]
-            # df = df.reset_index(inplace=False, drop= True)
-            df_to_np[i,j,:,:] = df2.iloc[45*(j):45*(j+1),:]
-            
-    n = int(scenario_name[-2:])-1
-    df_swat = df_to_np[:,:,sw,n]
-    y = df_swat
-
-    reg = LinearRegression(fit_intercept=False)
-    X = np.array((x1.flatten(), x2.flatten())).T
-    reg.fit(X, y.flatten())
-    reg.score(X,y.flatten())
-    return reg.coef_, reg.intercept_, reg.score(X,y.flatten()), df_swat, x1.flatten(), x2.flatten()
-
-# p_data = phosphorus_instream_coefs(33, 'Sheet01')
-# pd_coef_kpp = pd.DataFrame(columns=['k_p,p'])
-# pd_coef_kpq = pd.DataFrame(columns=['k_p,q'])
-# pd_coef_r2 = pd.DataFrame(columns=['r2'])
-# for sw in range(45):
-#         coef, _, r2, _,_,_ = phosphorus_instream_coefs(sw, 'Sheet01')
-#         pd_coef_kpp.loc[sw] = coef[0]
-#         pd_coef_kpq.loc[sw] = coef[1]
-#         # pd_coef_c.loc[sw] = coef[2]
-#         pd_coef_r2.loc[sw] = r2
 
 def phosphorus_instream(sw, scenario_name, reg):
     '''method 1: 1/Q '''
