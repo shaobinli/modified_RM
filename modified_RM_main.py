@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from data import *  # load data
+from point_source import point_source
 
 
 '''Step 1: enerate a set of response matrices (Y_(m,t)), gathered from SWAT simulation outputs'''
@@ -77,8 +78,8 @@ def get_area_prcnt(sheet_name):
     this function is not necessary for constructing modified RM.
     Return: area percentage of agricultural land for each BMP
     '''
+    # sheet_name = 'Sheet01'
     df = pd.read_excel(xls, sheet_name)
-    df = pd.read_excel(xls, 'Sheet01')
     df2 = df.iloc[:,6:10].reindex()
     BMPs = df2.iloc[0:45,2].unique()  
     BMPs = np.sort(BMPs)
@@ -102,7 +103,6 @@ def get_area_prcnt(sheet_name):
     return df_BMP_Prcnt, BMP_list
 
 # scenario_01, BMP_list = get_area_prcnt('Sheet01')
-# scenario_01.sum(axis=1)
 
 '''Step 4: develop a connectivity matrix (W) describing the upstream-downstream relationships of all subwatersheds'''
 '''This step does not require coding, but rather prepare an excel to represent connectivity matrix'''
@@ -118,7 +118,7 @@ def get_yield(name, scenario_name):
         2) yield_sum: (year, month, subwatershed)
     unit: kg/ha for nitrate, phosphorus; ton/ha for sediment; mm/ha for water yield
     '''    
-    name = 'phosphorus'; scenario_name = 'Sheet01'
+    # name = 'phosphorus'; scenario_name = 'Sheet01'
     response = response_mat(name)
     response_matrix = response[0]
     subwatershed = response[1]
@@ -169,130 +169,112 @@ def loading_landscape(name, scenario_name):
     loading = np.zeros((year.size, month.size, subwatershed.size))
     '''get yield data'''
     yield_data = get_yield(name, scenario_name)[1]
-    '''get loading'''
+    
+    '''get non-point source loading'''
     for i in range(year.size):
         for j in range(month.size):
             loading[i,j,:] = np.multiply(yield_data[i,j,:], total_land.T)
+    
     return loading
 
-# landscape_loading_nitrate = loading_landscape('nitrate', 'Sheet01')
+# landscape_loading_nitrate = loading_landscape('phosphorus', 'Sheet01')
 
 '''Step 6a: traditional RM method to estimate in-stream loads at the outlet of each subwatershed'''
-def loading_outlet_traditionalRM(name, landuse_matrix):
+def loading_outlet_traditionalRM(name, scenario_name):
     '''
     return a numpy array: (year, month,subwatershed)
     reservoir watershed: 33; downstream of res: 32
     outlet: 34
     '''
     linkage = pd.read_excel(r'./support_data/Watershed_linkage.xlsx', index_col=0)
-    loading_BMP_sum = loading_landscape(name, landuse_matrix)
-   
+    loading_BMP_sum = loading_landscape(name, scenario_name)
+    
+    '''add point source'''
+    loading_BMP_sum = loading_BMP_sum + point_source(name, 30)[1] # 30 is sw index where point souce located
+
     outlet = np.zeros((loading_BMP_sum.shape[0], loading_BMP_sum.shape[2], loading_BMP_sum.shape[1]))
     for i in range(loading_BMP_sum.shape[0]):
-        outlet[i,:,:] = np.dot(linkage, loading_BMP_sum[i,:,:].T)
+        outlet[i,:,:] = np.dot(linkage, loading_BMP_sum[i,:,:].T) 
     outlet = np.swapaxes(outlet, 1, 2)
     return outlet
+
+# df = loading_outlet_traditionalRM('phosphorus', 'Sheet01')
 
 '''Step 6b: modified RM method to estimate in-stream loads at the outlet of each subwatershed with modifications:'''
 def loading_outlet_modifiedRM(name, scenario_name):
     '''
+    function used to estimate subwatershed outlet loading of nitrate, phosphus and streamflow
     return a numpy (year, month, watershed)
-    reservoir watershed: 33; downstream of res: 32; outlet: 34
+    reservoir watershed: 32; downstream of res: 31; outlet: 33
     '''
-    df = pd.read_excel(r'.\support_data\Watershed_linkage_v2.xlsx')
-    df[np.isnan(df)] = 0
+    linkage = pd.read_excel(r'./support_data/Watershed_linkage.xlsx', index_col=0)
     loading_BMP_sum = loading_landscape(name, scenario_name)
-    outlet = np.zeros((loading_BMP_sum.shape[0], loading_BMP_sum.shape[1], loading_BMP_sum.shape[2]))
-    
-    sw_upstream = [i for i in range(33)]
-    
-    return 
 
-
-def loading_outlet_modifiedRM(name, scenario_name):
-    '''
-    function used to estimate loading of nitrate, phosphus and streamflow
-    return a numpy (year, month, watershed)
-    reservoir watershed: 33; downstream of res: 32; outlet: 34
-    '''
-    df = pd.read_excel(r'.\support_data\Watershed_linkage_v2.xlsx')
-    df[np.isnan(df)] = 0
-    loading_BMP_sum = loading_landscape(name, scenario_name)
-    outlet = np.zeros((loading_BMP_sum.shape[0], loading_BMP_sum.shape[1], loading_BMP_sum.shape[2]))
-    for i in range(33):
-        a = df.loc[i].unique().astype('int')
-        a = a[a!=0]
-        for j in a:
-            outlet[:,:,i] += loading_BMP_sum[:,:,j-1]     
-    # Total loading in sw32 = res_out + background loading
+    '''******************Step 6.1: Start of reservior trapping effect*******************'''    
+    res_downstream = [30, 31, 29, 36, 28, 34, 41, 33, 35, 38, 40, 42, 44, 23, 27]  # subwatersheds located downstream reservoir
+    res_upstream = list(set([i for i in range(45)]) - set(res_downstream)) # subwatersheds located upstream reservoir
+    linkage_W = linkage
+    np_min_trap = np.zeros((loading_BMP_sum.shape[2],1))
+    if name == 'phosphorus':
+        coef = 1-0.8811; min_trap = 2128.1
+    elif name == 'nitrate':
+        coef = 1-0.8694; min_trap = 46680.0
+    elif name == 'streamflow':
+        coef = 1-1.0075; min_trap = 1.9574
+    elif name == 'sediment':
+        coef = 1-0.294; min_trap = 100.0
     
-    '''******************Start of reservior trapping effect*******************'''
-    res_in = outlet[:,:,32]
-    if name == 'nitrate':
-        res_out = res_in * 0.8694 - 46680.0 # equationd derived from reservoir file in SWAT using nitrate_in and nitrate_out
-    elif name =='phosphorus':
-        res_out = res_in * 0.8811 - 2128.1  # equationd derived from reservoir file in SWAT using P_in and P_out
-    elif name =='streamflow':
-        res_out = res_in * 1.0075 - 1.9574  # equationd derived from reservoir file in SWAT using flow_in and flow_out
-    res_out = np.where(res_out<0, 0, res_out)
-        
-    # sw32 is the downstream of reservoir
-    outlet[:,:,31] = loading_BMP_sum[:,:,31] + res_out
-    '''******************End of reservior trapping effect*******************'''
-    # update loading in SDD (sw31)
-    outlet[:,:,30] = loading_BMP_sum[:,:,30] + outlet[:,:,31]
-    
-    '''***********************Start of point source*************************'''
-    if name == 'nitrate' or name == 'phosphorus':
-        df_point = df_point_SDD
-        if name == 'nitrate':
-            df_point = pd.DataFrame(df_point.iloc[:,0])
-        elif name == 'phosphorus':
-            df_point = pd.DataFrame(df_point.iloc[:,1])  
-        df_point['month'] = df_point.index.month
-        df_point['year'] = df_point.index.year
-        df2_point = np.zeros((16,12))
-        for i in range(16):
-            for j in range(12):
-                df2_point[i,j] = df_point.loc[(df_point.year==2003+i) & (df_point.month==1+j)].iloc[:,0].astype('float').sum()
-        if name =='nitrate':
-            outlet[:,:,30] = loading_BMP_sum[:,:,30] + outlet[:,:,31] + df2_point
-        elif name == 'phosphorus':
-            outlet[:,:,30] = loading_BMP_sum[:,:,30] + outlet[:,:,31] + df2_point
-    '''***********************End of point source*************************'''
-
-    # b contains all upstream subwatersheds for sw31
-    b = df.loc[30].unique().astype('int')
-    b = b[b!=0]
-    # get unique subwatersheds that do not contribute to reservoir
-    for i in range(33,45):
-        c = df.loc[i].unique().astype('int')
-        c = c[c!=0]
-        d = list(set(c) - set(b))
-        # Key step: the following equation takes the trapping efficiency into account. 
-        # All upstream contributions of sw32 is reconsidered with trapping efficiency 
-        if 31 in list(c):
-            # print ('true, i=',i)
-            outlet[:,:,i] = outlet[:,:,30]
-        for j in d:
-            outlet[:,:,i] += loading_BMP_sum[:,:,j-1]
-    # update the loadings for upperstream that has higher values
-    e = b[b>33] 
-    for i in e:
-        f = df.loc[i-1].unique().astype('int')
-        f = f[f!=0]
-        for j in f:
-            outlet[:,:,i-1] += loading_BMP_sum[:,:,j-1]
+    for i in range(loading_BMP_sum.shape[2]):
+        if i in res_downstream:
+            np_min_trap[i] = min_trap
+        for j in range(loading_BMP_sum.shape[2]):
+            if j in res_upstream and i in res_downstream:
+                linkage_W.iloc[i,j] = 1-coef
+                
+    '''***********************Step 6.2: Start of point source*************************'''
+    loading_BMP_sum = loading_BMP_sum + point_source(name, 30)[1] # 30 is subwatershed where point souce located
+ 
+    outlet = np.zeros((loading_BMP_sum.shape[0], loading_BMP_sum.shape[2], loading_BMP_sum.shape[1]))
+    for i in range(loading_BMP_sum.shape[0]):
+        outlet[i,:,:] = np.dot(linkage_W, loading_BMP_sum[i,:,:].T) - np_min_trap
+        outlet[i,:,:] = np.where(outlet[i,:,:]<0, 0, outlet[i,:,:])
+    outlet = np.swapaxes(outlet, 1, 2)
     if name == 'streamflow':
         outlet = outlet*10   # convert mm*ha to m3 by 10
-
     return outlet
 
+# df  = loading_outlet_modifiedRM('phosphorus', 'Sheet01')
 
-'''Start Section: sediment modification'''
+
+'''Step 6.3: P modification'''
+def streamflow_inv(sw, scenario_name):
+    '''original RM'''
+    landuse_matrix = landuse_mat()
+    scenario, BMP_list= get_area_prcnt(scenario_name)
+    for i in BMP_list:
+        landuse_matrix[:,i] = scenario.loc[:,i]
+    streamflow = loading_outlet_traditionalRM('streamflow', landuse_matrix)
+    return streamflow[:,:,sw]
+
+def phosphorus_instream(sw, scenario_name):
+    '''method 1: 1/Q '''
+    streamflow = loading_outlet_modifiedRM('streamflow', scenario_name)
+    streamflow_sw = streamflow[:,:,sw]
+    x2 = 1/streamflow_sw 
+    p_loss = loading_outlet_modifiedRM('phosphorus', scenario_name) # use original RM to predict 
+    x1 = p_loss[:,:,sw]
+    pd_coef = pd.read_excel(r'.\support_data\phosphorus_streamflow_regression_coefs.xlsx', usecols='B:D', sheet_name='invert q')
+    p_instream = pd_coef.iloc[sw,0]*x1 + pd_coef.iloc[sw,1]*x2
+    p_instream = np.where(p_instream<0, 0, p_instream)
+    return p_instream
+'''End Section: P modification'''
+
+
+
+'''Step 6.4: sediment modification'''
 def sediment_instream(sw, scenario_name, mode='poly'):
-    '''apply '''
-    streamflow = loading_outlet_USRW('streamflow', scenario_name)
+    '''apply linear or polynomial regression to estiamte instream sediment'''
+    streamflow = loading_outlet_modifiedRM('streamflow', scenario_name)
     streamflow = streamflow[:,:,sw]
     if mode == 'linear':
         pd_coef = pd.read_excel(r'.\support_data\sediment_streamflow_regression_coefs.xlsx', sheet_name='linear', usecols='B:C')
@@ -304,53 +286,3 @@ def sediment_instream(sw, scenario_name, mode='poly'):
     return sediment
 '''End Section: Sediment modification'''
 
-
-'''Start Section: P modification'''
-def streamflow_inv(sw, scenario_name):
-    '''original RM'''
-    landuse_matrix = landuse_mat()  # (45,56)
-    scenario, BMP_list= get_area_prcnt(scenario_name)
-    for i in BMP_list:
-        landuse_matrix[:,i] = scenario.loc[:,i]
-    streamflow = loading_outlet_traditionalRM('streamflow', landuse_matrix)
-    return streamflow[:,:,sw]
-
-def phosphorus_instream(sw, scenario_name, reg):
-    '''method 1: 1/Q '''
-    streamflow = loading_outlet_USRW('streamflow', scenario_name)
-    streamflow_sw = streamflow[:,:,sw]
-    x2 = 1/streamflow_sw 
-    
-    # '''method 2: 1/yield '''
-    # x2 = streamflow_inv(sw, scenario_name)
-
-    p_loss = loading_outlet_USRW('phosphorus', scenario_name) # use original RM to predict 
-    x1 = p_loss[:,:,sw]
-    if reg == 'linear':
-        pd_coef = pd.read_excel(r'.\support_data\phosphorus_streamflow_regression_coefs.xlsx', usecols='B:D', sheet_name='invert q')
-        # pd_coef = pd.read_excel(r'.\support_data\phosphorus_streamflow_regression_coefs.xlsx', usecols='B:D', sheet_name='invert_yield')
-        p_instream = pd_coef.iloc[sw,0]*x1 + pd_coef.iloc[sw,1]*x2
-    if reg =='interaction':
-        pd_coef = pd.read_excel(r'.\support_data\phosphorus_streamflow_regression_coefs.xlsx', usecols='B:D',sheet_name=1)
-        x3 = x1*x2
-        p_instream = pd_coef.iloc[sw,0]*x1 + pd_coef.iloc[sw,1]*x2 + pd_coef.iloc[sw,2]*x3
-    p_instream = np.where(p_instream<0, 0, p_instream)
-    return p_instream
-
-# df_iteem = loading_outlet_USRW('phosphorus', 'Sheet01')
-# df_iteem_sw = df_iteem[:,:,33].flatten()
-# a = phosphorus_instream(33, 'Sheet01', reg='interaction').flatten()
-'''End Section: P modification'''
-
-# test_N_1D = test_N.flatten()
-# start = time.time()
-# trial_list1 = ['Sheet0' + str(i) for i in range(1,10)]
-# trial_list2 = ['Sheet' + str(i) for i in range(10,101)]
-# trial_list = trial_list1 + trial_list2
-# for i in trial_list:
-#     test_TP = loading_outlet_USRW('phosphorus', i)
-#     test_nitrate = loading_outlet_USRW('nitrate', i)
-#     test_streamflow = loading_outlet_USRW('streamflow', i)
-#     test_sediment = loading_outlet_USRW('streamflow', i)
-# end = time.time()
-# print('simulation time is {:.1f} miniutes'.format((end-start)/60))
